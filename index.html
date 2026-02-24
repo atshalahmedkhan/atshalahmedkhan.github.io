@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SPARTAN-ATSHAL // MJOLNIR HUD v7.0</title>
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600;700&family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #020c10;
+  --hud-blue: #00c8e8;
+  --hud-teal: #00ffcc;
+  --hud-green: #39ff8a;
+  --hud-orange: #ff6a00;
+  --shield-blue: #4fc3f7;
+  --armor-dark: #0a1a22;
+  --panel-bg: rgba(0,20,32,0.82);
+  --border: rgba(0,200,232,0.22);
+  --text: #c8f0ff;
+  --dim: rgba(180,230,255,0.45);
+  --visor: #1a7fa8;
+}
+
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:'Rajdhani',sans-serif;
+  overflow-x:hidden;
+  cursor:none;
+}
+
+/* CUSTOM CURSOR — reticle */
+#reticle{
+  position:fixed;width:36px;height:36px;
+  pointer-events:none;z-index:9999;
+  transform:translate(-50%,-50%);
+  transition:transform 0.08s;
+}
+#reticle::before,#reticle::after{
+  content:'';position:absolute;background:var(--hud-teal);
+}
+#reticle::before{top:50%;left:0;right:0;height:1px;transform:translateY(-50%);}
+#reticle::after{left:50%;top:0;bottom:0;width:1px;transform:translateX(-50%);}
+.reticle-ring{
+  position:absolute;inset:4px;
+  border:1px solid rgba(0,255,204,0.5);
+  border-radius:50%;
+}
+.reticle-dot{
+  position:absolute;top:50%;left:50%;
+  width:4px;height:4px;background:var(--hud-teal);
+  border-radius:50%;transform:translate(-50%,-50%);
+  box-shadow:0 0 8px var(--hud-teal);
+}
+#reticle.aim .reticle-ring{border-color:var(--hud-orange);box-shadow:0 0 12px rgba(255,106,0,0.5);}
+
+/* SCANLINES */
+body::after{
+  content:'';position:fixed;inset:0;z-index:1;
+  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.04) 3px,rgba(0,0,0,0.04) 4px);
+  pointer-events:none;
+}
+
+/* VIGNETTE */
+body::before{
+  content:'';position:fixed;inset:0;z-index:1;
+  background:radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.6) 100%);
+  pointer-events:none;
+}
+
+/* ======================== NAV / TOP HUD ======================== */
+nav{
+  position:fixed;top:0;left:0;right:0;z-index:100;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 40px;height:56px;
+  background:rgba(2,12,16,0.9);
+  border-bottom:1px solid var(--border);
+  backdrop-filter:blur(16px);
+}
+.nav-spartan{
+  font-family:'Orbitron',monospace;font-weight:900;font-size:14px;
+  color:var(--hud-teal);letter-spacing:4px;
+  display:flex;align-items:center;gap:12px;
+}
+.spartan-tag{
+  font-size:10px;color:var(--dim);letter-spacing:2px;font-family:'Share Tech Mono',monospace;
+}
+.nav-links{display:flex;gap:0;list-style:none;}
+.nav-links a{
+  font-family:'Share Tech Mono',monospace;font-size:11px;letter-spacing:2px;
+  color:var(--dim);text-decoration:none;padding:0 20px;height:56px;
+  display:flex;align-items:center;border-right:1px solid var(--border);
+  transition:all 0.2s;position:relative;
+}
+.nav-links a::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:2px;
+  background:var(--hud-teal);transform:scaleX(0);transition:transform 0.2s;
+}
+.nav-links a:hover{color:var(--hud-teal);background:rgba(0,200,232,0.06);}
+.nav-links a:hover::after{transform:scaleX(1);}
+.nav-hud-right{
+  display:flex;align-items:center;gap:20px;
+  font-family:'Share Tech Mono',monospace;font-size:10px;
+}
+.shield-bar{display:flex;flex-direction:column;align-items:flex-end;gap:3px;}
+.shield-label{color:var(--dim);letter-spacing:2px;}
+.shield-track{width:80px;height:4px;background:rgba(0,200,232,0.15);border:1px solid var(--border);}
+.shield-fill{height:100%;background:linear-gradient(90deg,var(--shield-blue),var(--hud-teal));width:100%;
+  animation:shieldPulse 4s ease-in-out infinite;}
+@keyframes shieldPulse{0%,100%{opacity:1}60%{opacity:0.7}65%{opacity:1}}
+.ammo-counter{
+  font-family:'Orbitron',monospace;font-size:20px;font-weight:700;
+  color:var(--hud-teal);text-shadow:0 0 16px var(--hud-teal);
+  display:flex;align-items:flex-end;gap:4px;
+}
+.ammo-reserve{font-size:12px;color:var(--dim);margin-bottom:2px;}
+
+/* ======================== HERO / VISOR ======================== */
+#hero{
+  min-height:100vh;display:flex;align-items:center;
+  padding:80px 60px 60px;
+  position:relative;overflow:hidden;
+  perspective:1000px;
+}
+
+/* Atmospheric glow */
+.hero-bg{
+  position:absolute;inset:0;z-index:0;
+  background:
+    radial-gradient(ellipse 60% 80% at 75% 50%, rgba(0,80,120,0.25) 0%, transparent 60%),
+    radial-gradient(ellipse 40% 60% at 20% 80%, rgba(0,40,60,0.3) 0%, transparent 50%),
+    linear-gradient(180deg, #020c10 0%, #041824 50%, #020c10 100%);
+}
+
+/* MASTER CHIEF SILHOUETTE via CSS */
+.mc-container{
+  position:absolute;right:8%;top:50%;transform:translateY(-48%);
+  width:280px;height:520px;
+  filter:drop-shadow(0 0 30px rgba(0,200,232,0.3)) drop-shadow(0 0 60px rgba(0,255,204,0.15));
+  animation:mcFloat 6s ease-in-out infinite;
+  z-index:2;
+}
+@keyframes mcFloat{0%,100%{transform:translateY(-48%)}50%{transform:translateY(calc(-48% - 12px))}}
+
+/* SVG Master Chief silhouette */
+.mc-svg{width:100%;height:100%;}
+
+/* VISOR GLOW overlay */
+.visor-glow{
+  position:absolute;top:18%;left:50%;transform:translateX(-50%);
+  width:110px;height:38px;
+  background:linear-gradient(135deg, #1a9fc8, #00ffcc, #1a7fa8);
+  border-radius:4px 4px 0 0;
+  filter:blur(6px);
+  opacity:0.8;
+  animation:visorShimmer 3s ease-in-out infinite;
+}
+@keyframes visorShimmer{0%,100%{opacity:0.8}50%{opacity:1;filter:blur(4px);}}
+
+/* TARGETING BRACKETS around MC */
+.target-bracket{
+  position:absolute;top:50%;right:7%;transform:translateY(-50%);
+  width:310px;height:540px;
+  pointer-events:none;z-index:3;
+}
+.tb-corner{position:absolute;width:24px;height:24px;border-color:var(--hud-teal);border-style:solid;opacity:0.7;}
+.tb-corner.tl{top:0;left:0;border-width:2px 0 0 2px;}
+.tb-corner.tr{top:0;right:0;border-width:2px 2px 0 0;}
+.tb-corner.bl{bottom:0;left:0;border-width:0 0 2px 2px;}
+.tb-corner.br{bottom:0;right:0;border-width:0 2px 2px 0;}
+.tb-label{
+  position:absolute;bottom:-28px;left:0;right:0;text-align:center;
+  font-family:'Share Tech Mono',monospace;font-size:10px;
+  color:var(--hud-teal);letter-spacing:3px;
+  animation:blink 2s step-end infinite;
+}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+
+/* HERO CONTENT */
+.hero-content{position:relative;z-index:4;max-width:560px;}
+.hero-unit{
+  font-family:'Share Tech Mono',monospace;font-size:11px;
+  color:var(--hud-orange);letter-spacing:6px;margin-bottom:20px;
+  animation:fadeUp 0.8s ease 0.2s both;
+}
+.hero-name{
+  font-family:'Orbitron',monospace;font-weight:900;
+  font-size:clamp(36px,5.5vw,72px);line-height:1;
+  margin-bottom:8px;
+  background:linear-gradient(135deg, #ffffff 0%, var(--hud-teal) 60%, var(--hud-blue) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  filter:drop-shadow(0 0 30px rgba(0,255,204,0.4));
+  animation:fadeUp 0.8s ease 0.4s both;
+}
+.hero-callsign{
+  font-family:'Orbitron',monospace;font-size:clamp(14px,2vw,20px);
+  color:var(--hud-blue);letter-spacing:6px;margin-bottom:32px;
+  animation:fadeUp 0.8s ease 0.5s both;
+}
+.hero-bio{
+  font-size:16px;color:var(--dim);line-height:1.7;margin-bottom:36px;
+  max-width:480px;
+  animation:fadeUp 0.8s ease 0.6s both;
+}
+.hero-stats{
+  display:flex;gap:32px;margin-bottom:40px;flex-wrap:wrap;
+  animation:fadeUp 0.8s ease 0.7s both;
+}
+.h-stat{}
+.h-stat-val{
+  font-family:'Orbitron',monospace;font-size:28px;font-weight:700;
+  color:#fff;text-shadow:0 0 20px var(--hud-teal);line-height:1;
+}
+.h-stat-label{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);letter-spacing:2px;margin-top:4px;}
+.hero-cta{
+  display:flex;gap:16px;flex-wrap:wrap;
+  animation:fadeUp 0.8s ease 0.9s both;
+}
+.btn{
+  font-family:'Share Tech Mono',monospace;font-size:12px;letter-spacing:3px;
+  padding:14px 28px;border:none;cursor:none;text-decoration:none;
+  display:inline-flex;align-items:center;gap:10px;
+  clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
+  transition:all 0.25s;font-weight:600;
+}
+.btn-primary{
+  background:var(--hud-teal);color:#001a20;
+  box-shadow:0 0 30px rgba(0,255,204,0.3);
+}
+.btn-primary:hover{background:#fff;box-shadow:0 0 50px rgba(0,255,204,0.5);transform:translateY(-2px);}
+.btn-secondary{
+  background:transparent;color:var(--hud-teal);
+  border:1px solid var(--hud-teal);
+}
+.btn-secondary:hover{background:rgba(0,255,204,0.1);transform:translateY(-2px);}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+
+/* TACTICAL GRID background decoration */
+.tac-grid{
+  position:absolute;inset:0;z-index:1;
+  background-image:
+    linear-gradient(rgba(0,200,232,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,200,232,0.04) 1px, transparent 1px);
+  background-size:48px 48px;
+  mask-image:radial-gradient(ellipse 80% 80% at 50% 50%, black 30%, transparent 100%);
+}
+
+/* HUD horizontal line decorations */
+.hud-line{
+  position:absolute;z-index:3;
+  background:linear-gradient(90deg, transparent, var(--hud-teal), transparent);
+  height:1px;opacity:0.4;
+}
+.hud-line.top{top:80px;left:0;right:0;}
+.hud-line.bottom{bottom:60px;left:0;right:0;}
+
+/* ======================== SECTIONS ======================== */
+.section{position:relative;z-index:2;}
+.section-wrap{padding:90px 0;}
+.container{max-width:1200px;margin:0 auto;padding:0 48px;}
+
+.sec-header{display:flex;align-items:center;gap:16px;margin-bottom:48px;}
+.sec-tag{
+  font-family:'Share Tech Mono',monospace;font-size:10px;
+  color:var(--hud-orange);letter-spacing:4px;
+  border:1px solid var(--hud-orange);padding:3px 10px;
+}
+.sec-title{
+  font-family:'Orbitron',monospace;font-weight:700;
+  font-size:clamp(22px,2.5vw,32px);letter-spacing:3px;color:#fff;
+}
+.sec-line{flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent);}
+.sec-counter{
+  font-family:'Share Tech Mono',monospace;font-size:11px;color:var(--dim);letter-spacing:2px;
+}
+
+/* ======================== PANELS ======================== */
+.panel{
+  background:var(--panel-bg);
+  border:1px solid var(--border);
+  backdrop-filter:blur(16px);
+  position:relative;overflow:hidden;
+  transition:box-shadow 0.3s, border-color 0.3s;
+}
+.panel::before{
+  content:'';position:absolute;top:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--hud-teal),transparent);
+  opacity:0.5;
+}
+.panel:hover{
+  border-color:rgba(0,200,232,0.5);
+  box-shadow:0 0 40px rgba(0,200,232,0.08),inset 0 0 40px rgba(0,200,232,0.02);
+}
+.panel-notch{
+  position:absolute;bottom:0;right:0;
+  width:0;height:0;
+  border-style:solid;
+  border-width:0 0 20px 20px;
+  border-color:transparent transparent var(--bg) transparent;
+}
+
+/* ======================== SKILLS ======================== */
+.skills-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;}
+.skill-panel{padding:28px;}
+.skill-cat{
+  font-family:'Share Tech Mono',monospace;font-size:10px;
+  color:var(--hud-teal);letter-spacing:4px;margin-bottom:16px;
+  display:flex;align-items:center;gap:10px;
+}
+.skill-cat-icon{font-size:16px;}
+.skill-cat::after{content:'';flex:1;height:1px;background:var(--border);}
+.skill-tags{display:flex;flex-wrap:wrap;gap:8px;}
+.skill-tag{
+  font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:1px;
+  padding:4px 12px;
+  background:rgba(0,200,232,0.06);
+  border:1px solid rgba(0,200,232,0.2);
+  color:var(--text);
+  clip-path:polygon(6px 0%,100% 0%,calc(100% - 6px) 100%,0% 100%);
+  transition:all 0.2s;
+}
+.skill-tag:hover{background:rgba(0,255,204,0.15);border-color:var(--hud-teal);color:#fff;}
+
+/* ======================== PROJECTS ======================== */
+.projects-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:20px;}
+.proj-panel{padding:32px;cursor:none;transition:transform 0.15s ease;}
+.proj-panel:hover{transform:translateY(-5px);}
+.proj-header{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px;gap:12px;}
+.proj-id{
+  font-family:'Share Tech Mono',monospace;font-size:10px;
+  color:var(--hud-orange);letter-spacing:3px;
+  border:1px solid rgba(255,106,0,0.3);padding:2px 8px;
+  flex-shrink:0;
+}
+.proj-status{
+  font-family:'Share Tech Mono',monospace;font-size:9px;
+  color:var(--hud-green);letter-spacing:2px;
+  display:flex;align-items:center;gap:5px;
+}
+.proj-status::before{content:'';width:5px;height:5px;border-radius:50%;background:var(--hud-green);box-shadow:0 0 6px var(--hud-green);animation:statusPulse 2s infinite;}
+@keyframes statusPulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.proj-title{
+  font-family:'Orbitron',monospace;font-size:14px;font-weight:700;
+  color:#fff;margin-bottom:10px;line-height:1.3;
+}
+.proj-desc{font-size:14px;color:var(--dim);line-height:1.7;margin-bottom:18px;}
+.proj-tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;}
+.proj-tag{
+  font-family:'Share Tech Mono',monospace;font-size:9px;letter-spacing:1px;
+  padding:3px 10px;background:rgba(0,255,204,0.06);
+  border:1px solid rgba(0,255,204,0.2);color:var(--hud-teal);
+}
+.proj-metric{
+  font-family:'Share Tech Mono',monospace;font-size:11px;
+  color:var(--hud-teal);display:flex;align-items:center;gap:8px;
+  padding-top:14px;border-top:1px solid var(--border);
+}
+.proj-metric::before{content:'▸';color:var(--hud-orange);}
+
+/* FEATURED project — wider */
+.proj-panel.featured{
+  grid-column:span 2;
+  border-color:rgba(0,255,204,0.35);
+  background:rgba(0,30,40,0.9);
+}
+@media(max-width:768px){.proj-panel.featured{grid-column:span 1;}}
+
+/* ======================== EXPERIENCE ======================== */
+.exp-list{display:flex;flex-direction:column;gap:2px;}
+.exp-item{
+  display:grid;grid-template-columns:180px 1fr;
+  border-left:2px solid var(--border);
+  position:relative;
+}
+.exp-item::before{
+  content:'';position:absolute;left:-5px;top:32px;
+  width:8px;height:8px;border-radius:50%;
+  background:var(--hud-teal);box-shadow:0 0 12px var(--hud-teal);
+}
+.exp-side{
+  padding:28px 24px;border-right:1px solid var(--border);
+  display:flex;flex-direction:column;gap:6px;
+}
+.exp-period{
+  font-family:'Share Tech Mono',monospace;font-size:10px;
+  color:var(--hud-orange);letter-spacing:2px;
+}
+.exp-loc{font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);letter-spacing:1px;}
+.exp-main{padding:28px 32px;}
+.exp-company{
+  font-family:'Orbitron',monospace;font-size:14px;font-weight:700;color:#fff;margin-bottom:4px;
+}
+.exp-role{
+  font-family:'Share Tech Mono',monospace;font-size:11px;
+  color:var(--hud-teal);letter-spacing:2px;margin-bottom:14px;
+}
+.exp-bullets{list-style:none;}
+.exp-bullets li{
+  font-size:14px;color:var(--dim);line-height:1.7;
+  padding-left:20px;position:relative;margin-bottom:6px;
+}
+.exp-bullets li::before{
+  content:'▸';position:absolute;left:0;
+  color:var(--hud-teal);font-size:10px;top:4px;
+}
+
+/* ======================== TERMINAL ======================== */
+.terminal{
+  background:#010e16;
+  border:1px solid rgba(0,200,232,0.3);
+  box-shadow:0 0 60px rgba(0,200,232,0.08);
+}
+.terminal-bar{
+  background:rgba(0,20,30,0.95);
+  border-bottom:1px solid var(--border);
+  padding:10px 20px;
+  display:flex;align-items:center;gap:10px;
+}
+.t-btn{width:12px;height:12px;border-radius:50%;}
+.t-btn.r{background:#ff5f57;} .t-btn.y{background:#ffbd2e;} .t-btn.g{background:#28c840;}
+.t-bar-label{
+  font-family:'Share Tech Mono',monospace;font-size:11px;
+  color:var(--hud-teal);letter-spacing:3px;margin-left:10px;
+}
+.t-bar-right{
+  margin-left:auto;font-family:'Share Tech Mono',monospace;font-size:10px;
+  color:var(--dim);letter-spacing:2px;display:flex;align-items:center;gap:8px;
+}
+.t-status-dot{width:5px;height:5px;border-radius:50%;background:var(--hud-green);animation:statusPulse 2s infinite;}
+.terminal-body{
+  padding:24px;min-height:320px;max-height:480px;overflow-y:auto;
+  font-family:'Share Tech Mono',monospace;font-size:13px;line-height:1.8;
+}
+.terminal-body::-webkit-scrollbar{width:4px;}
+.terminal-body::-webkit-scrollbar-track{background:transparent;}
+.terminal-body::-webkit-scrollbar-thumb{background:var(--border);}
+.t-line{margin-bottom:2px;display:flex;gap:8px;flex-wrap:wrap;}
+.t-prompt{color:var(--hud-green);white-space:nowrap;flex-shrink:0;}
+.t-cmd{color:#fff;}
+.t-out{color:var(--dim);}
+.t-out.ok{color:var(--hud-green);}
+.t-out.info{color:var(--hud-teal);}
+.t-out.warn{color:var(--hud-orange);}
+.t-out.err{color:#ff4466;}
+.t-out.hero{color:#fff;font-size:14px;}
+.t-input-row{
+  display:flex;align-items:center;
+  border-top:1px solid var(--border);
+  padding:14px 24px;
+}
+.t-input-prompt{font-family:'Share Tech Mono',monospace;font-size:13px;color:var(--hud-green);white-space:nowrap;margin-right:8px;}
+#term-input{
+  flex:1;background:transparent;border:none;outline:none;
+  font-family:'Share Tech Mono',monospace;font-size:13px;color:#fff;
+  caret-color:var(--hud-teal);
+}
+
+/* ======================== CONTACT ======================== */
+.contact-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
+.contact-panel{padding:40px;}
+.contact-links{display:flex;flex-direction:column;gap:12px;}
+.c-link{
+  display:flex;align-items:center;gap:16px;padding:16px 20px;
+  border:1px solid var(--border);text-decoration:none;
+  font-family:'Share Tech Mono',monospace;font-size:12px;
+  color:var(--dim);letter-spacing:2px;
+  transition:all 0.25s;
+  clip-path:polygon(0 0,calc(100% - 12px) 0,100% 12px,100% 100%,0 100%);
+}
+.c-link:hover{border-color:var(--hud-teal);color:var(--hud-teal);background:rgba(0,200,232,0.05);}
+.c-icon{font-size:18px;color:var(--hud-teal);width:24px;text-align:center;}
+.info-block{font-size:15px;color:var(--dim);line-height:1.8;}
+.info-block strong{color:var(--hud-teal);}
+.info-block p{margin-bottom:14px;}
+.clearance-badge{
+  display:inline-flex;align-items:center;gap:10px;margin-top:20px;
+  padding:12px 20px;border:1px solid var(--hud-green);
+  font-family:'Share Tech Mono',monospace;font-size:10px;letter-spacing:3px;
+  color:var(--hud-green);background:rgba(57,255,138,0.05);
+}
+
+/* ======================== FOOTER ======================== */
+footer{
+  border-top:1px solid var(--border);padding:32px 48px;
+  display:flex;align-items:center;justify-content:space-between;
+  z-index:2;position:relative;
+  font-family:'Share Tech Mono',monospace;font-size:10px;color:var(--dim);letter-spacing:3px;
+}
+.footer-unsc{color:var(--hud-teal);}
+
+/* ======================== REVEAL ======================== */
+.reveal{opacity:0;transform:translateY(32px);transition:opacity 0.7s ease,transform 0.7s ease;}
+.reveal.vis{opacity:1;transform:translateY(0);}
+.reveal.d1{transition-delay:0.1s}.reveal.d2{transition-delay:0.2s}.reveal.d3{transition-delay:0.3s}.reveal.d4{transition-delay:0.4s}
+
+/* ======================== RESPONSIVE ======================== */
+@media(max-width:900px){
+  nav{padding:0 20px;}
+  .nav-links{display:none;}
+  .mc-container{display:none;}
+  .target-bracket{display:none;}
+  .container{padding:0 20px;}
+  .contact-grid{grid-template-columns:1fr;}
+  .exp-item{grid-template-columns:1fr;}
+  .exp-side{border-right:none;border-bottom:1px solid var(--border);padding:16px 20px;}
+  .section-wrap{padding:60px 0;}
+  #hero{padding:80px 20px 40px;}
+  .ammo-counter{display:none;}
+}
+</style>
+</head>
+<body>
+
+<!-- RETICLE CURSOR -->
+<div id="reticle">
+  <div class="reticle-ring"></div>
+  <div class="reticle-dot"></div>
+</div>
+
+<!-- ==================== NAV ==================== -->
+<nav>
+  <div class="nav-spartan">
+    <span>SPARTAN</span>
+    <span style="color:#fff">ATSHAL-117</span>
+    <span class="spartan-tag">// MJOLNIR GEN III</span>
+  </div>
+  <ul class="nav-links">
+    <li><a href="#about">INTEL</a></li>
+    <li><a href="#skills">ARMORY</a></li>
+    <li><a href="#projects">OPS</a></li>
+    <li><a href="#experience">HISTORY</a></li>
+    <li><a href="#terminal">CORTANA</a></li>
+    <li><a href="#contact">COMMS</a></li>
+  </ul>
+  <div class="nav-hud-right">
+    <div class="shield-bar">
+      <div class="shield-label">SHIELDS</div>
+      <div class="shield-track"><div class="shield-fill"></div></div>
+    </div>
+    <div class="ammo-counter">
+      <span>36</span>
+      <span class="ammo-reserve">/ 108</span>
+    </div>
+  </div>
+</nav>
+
+<!-- ==================== HERO ==================== -->
+<section id="hero" class="section">
+  <div class="hero-bg"></div>
+  <div class="tac-grid"></div>
+  <div class="hud-line top"></div>
+  <div class="hud-line bottom"></div>
+
+  <!-- MASTER CHIEF SVG SILHOUETTE -->
+  <div class="mc-container">
+    <div class="visor-glow"></div>
+    <svg class="mc-svg" viewBox="0 0 280 520" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id="armorGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#0a2a38"/>
+          <stop offset="50%" stop-color="#0d3548"/>
+          <stop offset="100%" stop-color="#061820"/>
+        </linearGradient>
+        <linearGradient id="visorGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#00c8e8" stop-opacity="0.9"/>
+          <stop offset="40%" stop-color="#00ffcc" stop-opacity="1"/>
+          <stop offset="100%" stop-color="#1a7fa8" stop-opacity="0.8"/>
+        </linearGradient>
+        <linearGradient id="glowEdge" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0%" stop-color="#00ffcc" stop-opacity="0.6"/>
+          <stop offset="100%" stop-color="transparent"/>
+        </linearGradient>
+        <filter id="glow">
+          <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+          <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="visorGlow">
+          <feGaussianBlur stdDeviation="5" result="coloredBlur"/>
+          <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+
+      <!-- HELMET -->
+      <!-- Main helmet dome -->
+      <path d="M80 120 Q80 60 140 55 Q200 60 200 120 L205 170 Q205 185 190 188 L90 188 Q75 185 75 170 Z" fill="url(#armorGrad)" stroke="#0e4060" stroke-width="1.5"/>
+      <!-- Helmet top ridge -->
+      <path d="M110 60 L140 52 L170 60" stroke="#1a6080" stroke-width="2" fill="none"/>
+      <!-- Helmet side detail L -->
+      <path d="M80 120 Q70 130 72 155 L80 158" fill="#071d2a" stroke="#0e3a50" stroke-width="1"/>
+      <!-- Helmet side detail R -->
+      <path d="M200 120 Q210 130 208 155 L200 158" fill="#071d2a" stroke="#0e3a50" stroke-width="1"/>
+
+      <!-- VISOR -->
+      <path d="M95 125 Q95 108 140 106 Q185 108 185 125 L183 148 Q183 158 165 160 L115 160 Q97 158 97 148 Z" fill="url(#visorGrad)" filter="url(#visorGlow)" opacity="0.95"/>
+      <!-- Visor shine -->
+      <ellipse cx="125" cy="128" rx="18" ry="8" fill="rgba(255,255,255,0.12)" transform="rotate(-15,125,128)"/>
+      <!-- Visor reflection lines -->
+      <line x1="100" y1="140" x2="130" y2="115" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+      <!-- Visor edge glow -->
+      <path d="M95 125 Q95 108 140 106 Q185 108 185 125" stroke="rgba(0,255,204,0.8)" stroke-width="1.5" fill="none" filter="url(#glow)"/>
+
+      <!-- Chin/jaw area -->
+      <path d="M90 185 L95 205 L185 205 L190 185 Z" fill="#09202e" stroke="#0e3a50" stroke-width="1"/>
+      <!-- Chin vents -->
+      <rect x="115" y="190" width="50" height="4" rx="2" fill="#061420" stroke="#0a304a" stroke-width="0.5"/>
+      <rect x="120" y="198" width="40" height="3" rx="1.5" fill="#061420" stroke="#0a304a" stroke-width="0.5"/>
+
+      <!-- NECK -->
+      <rect x="118" y="205" width="44" height="22" rx="4" fill="#071a26" stroke="#0e3a50" stroke-width="1"/>
+      <!-- Neck detail -->
+      <rect x="124" y="209" width="32" height="3" rx="1" fill="#0a2535"/>
+      <rect x="124" y="215" width="32" height="3" rx="1" fill="#0a2535"/>
+
+      <!-- CHEST ARMOR — main -->
+      <path d="M62 228 L80 222 L95 225 L140 220 L185 225 L200 222 L218 228 L228 290 L220 310 L60 310 L52 290 Z" fill="url(#armorGrad)" stroke="#0e4060" stroke-width="1.5"/>
+      <!-- Chest center plate -->
+      <path d="M100 225 L140 220 L180 225 L175 295 L140 298 L105 295 Z" fill="#071e2e" stroke="#104060" stroke-width="1"/>
+      <!-- Chest LED stripe -->
+      <rect x="128" y="240" width="24" height="3" rx="1.5" fill="var(--hud-teal)" opacity="0.9" filter="url(#glow)"/>
+      <rect x="132" y="248" width="16" height="2" rx="1" fill="var(--hud-teal)" opacity="0.6"/>
+      <!-- UNSC chest emblem area -->
+      <circle cx="140" cy="270" r="12" fill="#061520" stroke="#104060" stroke-width="1"/>
+      <circle cx="140" cy="270" r="8" fill="#071d2e" stroke="rgba(0,200,232,0.4)" stroke-width="1"/>
+      <circle cx="140" cy="270" r="4" fill="rgba(0,200,232,0.6)" filter="url(#glow)"/>
+      <!-- Chest side panels -->
+      <path d="M62 230 L80 224 L95 228 L90 305 L60 310 Z" fill="#08192a" stroke="#0c3050" stroke-width="1"/>
+      <path d="M218 230 L200 224 L185 228 L190 305 L220 310 Z" fill="#08192a" stroke="#0c3050" stroke-width="1"/>
+
+      <!-- SHOULDER PAULDRONS -->
+      <!-- Left shoulder -->
+      <path d="M40 225 Q30 230 25 250 Q22 270 30 285 L62 285 L62 228 Z" fill="#09202e" stroke="#0e3a50" stroke-width="1.5"/>
+      <path d="M35 235 Q28 242 26 258" stroke="rgba(0,200,232,0.4)" stroke-width="1.5" fill="none"/>
+      <!-- Right shoulder -->
+      <path d="M240 225 Q250 230 255 250 Q258 270 250 285 L218 285 L218 228 Z" fill="#09202e" stroke="#0e3a50" stroke-width="1.5"/>
+      <path d="M245 235 Q252 242 254 258" stroke="rgba(0,200,232,0.4)" stroke-width="1.5" fill="none"/>
+
+      <!-- UPPER ARMS -->
+      <!-- Left arm -->
+      <path d="M30 285 L25 380 L55 388 L62 290 Z" fill="#08192a" stroke="#0e3a50" stroke-width="1"/>
+      <!-- Right arm -->
+      <path d="M250 285 L255 380 L225 388 L218 290 Z" fill="#08192a" stroke="#0e3a50" stroke-width="1"/>
+
+      <!-- ELBOW armor -->
+      <ellipse cx="28" cy="348" rx="12" ry="18" fill="#0a2235" stroke="#0e3a50" stroke-width="1" transform="rotate(-5,28,348)"/>
+      <ellipse cx="252" cy="348" rx="12" ry="18" fill="#0a2235" stroke="#0e3a50" stroke-width="1" transform="rotate(5,252,348)"/>
+
+      <!-- FOREARMS -->
+      <path d="M18 368 L22 440 L52 435 L55 375 Z" fill="#09202e" stroke="#0e3a50" stroke-width="1"/>
+      <!-- Forearm LEDs -->
+      <rect x="22" y="395" width="22" height="2" rx="1" fill="rgba(0,255,204,0.5)" filter="url(#glow)"/>
+      <rect x="22" y="402" width="15" height="2" rx="1" fill="rgba(0,255,204,0.3)"/>
+
+      <path d="M262 368 L258 440 L228 435 L225 375 Z" fill="#09202e" stroke="#0e3a50" stroke-width="1"/>
+      <rect x="238" y="395" width="22" height="2" rx="1" fill="rgba(0,255,204,0.5)" filter="url(#glow)"/>
+
+      <!-- HANDS (gloves) -->
+      <ellipse cx="35" cy="448" rx="16" ry="20" fill="#061420" stroke="#0a3050" stroke-width="1"/>
+      <ellipse cx="245" cy="448" rx="16" ry="20" fill="#061420" stroke="#0a3050" stroke-width="1"/>
+      <!-- MA5 Assault Rifle suggestion in right hand -->
+      <path d="M228 430 L285 440 L285 455 L228 460 Z" fill="#05101a" stroke="#0a2535" stroke-width="1"/>
+      <path d="M258 440 L285 440 L285 455 L258 455 Z" fill="#040d16"/>
+      <path d="M268 432 L278 432 L278 440" stroke="#0a2535" stroke-width="1.5" fill="none"/>
+      <rect x="258" y="444" width="28" height="2" rx="1" fill="rgba(0,200,232,0.4)" filter="url(#glow)"/>
+
+      <!-- TORSO / ABDOMEN -->
+      <path d="M90 308 L95 400 L185 400 L190 308 Z" fill="#08192a" stroke="#0e3a50" stroke-width="1"/>
+      <!-- Abs armor plates -->
+      <rect x="105" y="318" width="30" height="18" rx="2" fill="#071820" stroke="#0d3548" stroke-width="1"/>
+      <rect x="145" y="318" width="30" height="18" rx="2" fill="#071820" stroke="#0d3548" stroke-width="1"/>
+      <rect x="105" y="342" width="30" height="18" rx="2" fill="#071820" stroke="#0d3548" stroke-width="1"/>
+      <rect x="145" y="342" width="30" height="18" rx="2" fill="#071820" stroke="#0d3548" stroke-width="1"/>
+      <rect x="112" y="366" width="56" height="18" rx="2" fill="#071820" stroke="#0d3548" stroke-width="1"/>
+
+      <!-- HIPS / WAIST -->
+      <path d="M85 400 L80 420 L200 420 L195 400 Z" fill="#09202e" stroke="#0e3a50" stroke-width="1"/>
+      <!-- Hip plates -->
+      <path d="M68 408 L85 402 L82 430 L60 435 Z" fill="#071820" stroke="#0d3548" stroke-width="1"/>
+      <path d="M212 408 L195 402 L198 430 L220 435 Z" fill="#071820" stroke="#0d3548" stroke-width="1"/>
+
+      <!-- THIGHS -->
+      <path d="M88 420 L82 500 L125 505 L128 420 Z" fill="#08192a" stroke="#0e3a50" stroke-width="1"/>
+      <path d="M152 420 L152 505 L198 500 L192 420 Z" fill="#08192a" stroke="#0e3a50" stroke-width="1"/>
+      <!-- Thigh armor -->
+      <rect x="90" y="435" width="34" height="45" rx="3" fill="#071820" stroke="#0d3548" stroke-width="1"/>
+      <rect x="156" y="435" width="34" height="45" rx="3" fill="#071820" stroke="#0d3548" stroke-width="1"/>
+
+      <!-- KNEE ARMOR -->
+      <ellipse cx="103" cy="500" rx="20" ry="14" fill="#0a2235" stroke="#0e3a50" stroke-width="1"/>
+      <ellipse cx="177" cy="500" rx="20" ry="14" fill="#0a2235" stroke="#0e3a50" stroke-width="1"/>
+
+      <!-- SHINS / GREAVES -->
+      <path d="M83 510 L86 518 L120 518 L124 508 Z" fill="#09202e" stroke="#0e3a50" stroke-width="1"/>
+      <path d="M160 508 L156 518 L194 518 L197 510 Z" fill="#09202e" stroke="#0e3a50" stroke-width="1"/>
+
+      <!-- EDGE GLOW LINES — armor trim -->
+      <path d="M80 222 L80 310" stroke="rgba(0,200,232,0.3)" stroke-width="0.8" fill="none" filter="url(#glow)"/>
+      <path d="M200 222 L200 310" stroke="rgba(0,200,232,0.3)" stroke-width="0.8" fill="none" filter="url(#glow)"/>
+      <path d="M62 228 L62 310" stroke="rgba(0,255,204,0.2)" stroke-width="0.5" fill="none"/>
+      <path d="M218 228 L218 310" stroke="rgba(0,255,204,0.2)" stroke-width="0.5" fill="none"/>
+    </svg>
+  </div>
+
+  <!-- TARGET BRACKETS -->
+  <div class="target-bracket">
+    <div class="tb-corner tl"></div>
+    <div class="tb-corner tr"></div>
+    <div class="tb-corner bl"></div>
+    <div class="tb-corner br"></div>
+    <div class="tb-label">SPARTAN-ATSHAL // TARGET LOCKED</div>
+  </div>
+
+  <!-- HERO CONTENT -->
+  <div class="hero-content">
+    <div class="hero-unit">UNSC SPARTAN PROGRAM // SECTOR: BUFFALO, NY</div>
+    <h1 class="hero-name">ATSHAL<br>AHMED KHAN</h1>
+    <div class="hero-callsign">SPARTAN-ATSHAL // MJOLNIR ACTIVE</div>
+    <p class="hero-bio">Computer Science Spartan with hands-on experience in <strong style="color:var(--hud-teal)">full-stack development</strong>, <strong style="color:var(--hud-teal)">AI/ML systems</strong>, and <strong style="color:var(--hud-teal)">data engineering</strong>. Three active research missions. One startup launched. Authorized for deployment.</p>
+    <div class="hero-stats">
+      <div class="h-stat">
+        <div class="h-stat-val">3.6</div>
+        <div class="h-stat-label">GPA // 4.0 SCALE</div>
+      </div>
+      <div class="h-stat">
+        <div class="h-stat-val">3</div>
+        <div class="h-stat-label">ACTIVE MISSIONS</div>
+      </div>
+      <div class="h-stat">
+        <div class="h-stat-val">6+</div>
+        <div class="h-stat-label">PROJECTS DEPLOYED</div>
+      </div>
+      <div class="h-stat">
+        <div class="h-stat-val">100+</div>
+        <div class="h-stat-label">STUDENTS SERVED</div>
+      </div>
+    </div>
+    <div class="hero-cta">
+      <a href="#terminal" class="btn btn-primary">► OPEN COMMS</a>
+      <a href="#projects" class="btn btn-secondary">VIEW MISSIONS</a>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== SKILLS ==================== -->
+<section id="about" class="section section-wrap">
+  <div class="container">
+    <div class="sec-header reveal">
+      <span class="sec-tag">ARMORY</span>
+      <h2 class="sec-title">TECH STACK</h2>
+      <div class="sec-line"></div>
+      <span class="sec-counter">02 // LOADOUT</span>
+    </div>
+    <div id="skills" class="skills-grid">
+      <div class="panel skill-panel reveal d1"><div class="panel-notch"></div>
+        <div class="skill-cat"><span class="skill-cat-icon">⌨</span>LANGUAGES</div>
+        <div class="skill-tags">
+          <span class="skill-tag">PYTHON</span><span class="skill-tag">JAVASCRIPT</span>
+          <span class="skill-tag">TYPESCRIPT</span><span class="skill-tag">JAVA</span>
+          <span class="skill-tag">SQL</span><span class="skill-tag">HTML/CSS</span>
+        </div>
+      </div>
+      <div class="panel skill-panel reveal d2"><div class="panel-notch"></div>
+        <div class="skill-cat"><span class="skill-cat-icon">⬡</span>AI / ML</div>
+        <div class="skill-tags">
+          <span class="skill-tag">TENSORFLOW</span><span class="skill-tag">SCIKIT-LEARN</span>
+          <span class="skill-tag">OPENCV</span><span class="skill-tag">YOLOV8</span>
+          <span class="skill-tag">PANDAS</span><span class="skill-tag">NUMPY</span>
+          <span class="skill-tag">COMPUTER VISION</span>
+        </div>
+      </div>
+      <div class="panel skill-panel reveal d3"><div class="panel-notch"></div>
+        <div class="skill-cat"><span class="skill-cat-icon">◈</span>FRONTEND</div>
+        <div class="skill-tags">
+          <span class="skill-tag">REACT</span><span class="skill-tag">ANGULAR</span>
+          <span class="skill-tag">FLUTTER</span><span class="skill-tag">REDUX</span>
+          <span class="skill-tag">MATERIAL-UI</span><span class="skill-tag">BOOTSTRAP</span>
+        </div>
+      </div>
+      <div class="panel skill-panel reveal d4"><div class="panel-notch"></div>
+        <div class="skill-cat"><span class="skill-cat-icon">☁</span>CLOUD / OPS</div>
+        <div class="skill-tags">
+          <span class="skill-tag">NODE.JS</span><span class="skill-tag">EXPRESS</span>
+          <span class="skill-tag">GRAPHQL</span><span class="skill-tag">MONGODB</span>
+          <span class="skill-tag">MYSQL</span><span class="skill-tag">AWS</span>
+          <span class="skill-tag">GCP</span><span class="skill-tag">DOCKER</span><span class="skill-tag">CI/CD</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== PROJECTS ==================== -->
+<section id="projects" class="section section-wrap" style="padding-top:0">
+  <div class="container">
+    <div class="sec-header reveal">
+      <span class="sec-tag">INTEL</span>
+      <h2 class="sec-title">MISSION LOG</h2>
+      <div class="sec-line"></div>
+      <span class="sec-counter">03 // OPERATIONS</span>
+    </div>
+    <div class="projects-grid">
+
+      <div class="panel proj-panel featured reveal d1">
+        <div class="panel-notch"></div>
+        <div class="proj-header">
+          <div class="proj-id">OPS-001 // PRIORITY ALPHA</div>
+          <div class="proj-status">ACTIVE</div>
+        </div>
+        <div class="proj-title">AI Navigation System for Visually Impaired</div>
+        <div class="proj-desc">Real-time object detection and obstacle avoidance using deep learning and computer vision. 3D spatial mapping with sensor fusion, cross-platform mobile app with haptic + audio guidance powered by Gemini AI API for contextual scene understanding.</div>
+        <div class="proj-tags">
+          <span class="proj-tag">TENSORFLOW</span><span class="proj-tag">FLUTTER</span>
+          <span class="proj-tag">GEMINI AI</span><span class="proj-tag">COMPUTER VISION</span><span class="proj-tag">SENSOR FUSION</span>
+        </div>
+        <div class="proj-metric">IN ACTIVE DEVELOPMENT — 2025 TO PRESENT</div>
+      </div>
+
+      <div class="panel proj-panel reveal d2">
+        <div class="panel-notch"></div>
+        <div class="proj-header">
+          <div class="proj-id">OPS-002 // HACKHARVARD</div>
+          <div class="proj-status">COMPLETE</div>
+        </div>
+        <div class="proj-title">WanderSafe</div>
+        <div class="proj-desc">Accessibility app for visually impaired users. YOLOv8 real-time obstacle detection, multi-modal voice + vibration feedback, GCP cloud deployment for scalable inference.</div>
+        <div class="proj-tags">
+          <span class="proj-tag">YOLOV8</span><span class="proj-tag">GCP</span><span class="proj-tag">FLUTTER</span>
+        </div>
+        <div class="proj-metric">95% DETECTION ACCURACY — 99.9% UPTIME</div>
+      </div>
+
+      <div class="panel proj-panel reveal d3">
+        <div class="panel-notch"></div>
+        <div class="proj-header">
+          <div class="proj-id">OPS-003 // DATA</div>
+          <div class="proj-status">COMPLETE</div>
+        </div>
+        <div class="proj-title">Real Estate Analytics Platform</div>
+        <div class="proj-desc">ML housing price prediction via Linear Regression, Random Forest, and ensemble methods. Interactive visualization dashboard with Plotly and Seaborn, k-fold cross-validation optimization.</div>
+        <div class="proj-tags">
+          <span class="proj-tag">SCIKIT-LEARN</span><span class="proj-tag">RANDOM FOREST</span><span class="proj-tag">PLOTLY</span>
+        </div>
+        <div class="proj-metric">R² = 0.89 — RMSE = $12,500</div>
+      </div>
+
+      <div class="panel proj-panel reveal d1">
+        <div class="panel-notch"></div>
+        <div class="proj-header">
+          <div class="proj-id">OPS-004 // RESEARCH</div>
+          <div class="proj-status">ACTIVE</div>
+        </div>
+        <div class="proj-title">WTTool — Wireless Simulator</div>
+        <div class="proj-desc">Full-stack app for creating, simulating, and visualizing wireless network topologies using real geographic data. Google Maps API + NS3 integration.</div>
+        <div class="proj-tags">
+          <span class="proj-tag">JAVASCRIPT</span><span class="proj-tag">GOOGLE MAPS</span><span class="proj-tag">NS3</span>
+        </div>
+        <div class="proj-metric">UB RESEARCH PROGRAM</div>
+      </div>
+
+      <div class="panel proj-panel reveal d2">
+        <div class="panel-notch"></div>
+        <div class="proj-header">
+          <div class="proj-id">OPS-005 // ETL</div>
+          <div class="proj-status">ACTIVE</div>
+        </div>
+        <div class="proj-title">Flag Football Analytics Pipeline</div>
+        <div class="proj-desc">Automated ETL pipeline for women's flag football performance data. Web scraping with BeautifulSoup + Selenium, statistical analysis and visualization for coaching insights.</div>
+        <div class="proj-tags">
+          <span class="proj-tag">PYTHON</span><span class="proj-tag">PANDAS</span><span class="proj-tag">SELENIUM</span>
+        </div>
+        <div class="proj-metric">1000+ DATA POINTS / WEEK — FUNDED URCA</div>
+      </div>
+
+      <div class="panel proj-panel reveal d3">
+        <div class="panel-notch"></div>
+        <div class="proj-header">
+          <div class="proj-id">OPS-006 // WEB</div>
+          <div class="proj-status">DEPLOYED</div>
+        </div>
+        <div class="proj-title">Weather Analytics Dashboard</div>
+        <div class="proj-desc">Full-stack PWA with real-time weather integration, historical data analysis, and forecasting visualization. Automated CI/CD pipeline on Heroku.</div>
+        <div class="proj-tags">
+          <span class="proj-tag">JAVASCRIPT</span><span class="proj-tag">CHART.JS</span><span class="proj-tag">CI/CD</span>
+        </div>
+        <div class="proj-metric">LIVE — 2023</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ==================== EXPERIENCE ==================== -->
+<section id="experience" class="section section-wrap" style="padding-top:0">
+  <div class="container">
+    <div class="sec-header reveal">
+      <span class="sec-tag">UNSC FILE</span>
+      <h2 class="sec-title">SERVICE RECORD</h2>
+      <div class="sec-line"></div>
+      <span class="sec-counter">04 // HISTORY</span>
+    </div>
+    <div class="exp-list">
+      <div class="exp-item reveal">
+        <div class="exp-side">
+          <div class="exp-period">JAN 2026 – NOW</div>
+          <div class="exp-loc">BUFFALO, NY</div>
+        </div>
+        <div class="exp-main">
+          <div class="exp-company">UNIVERSITY AT BUFFALO — URCA</div>
+          <div class="exp-role">UNDERGRADUATE RESEARCH ASSISTANT (FUNDED)</div>
+          <ul class="exp-bullets">
+            <li>Engineering Python ETL pipelines for automated collection, cleaning, and analysis of flag football performance data</li>
+            <li>Web scraping with BeautifulSoup + Selenium — processing 1000+ data points weekly</li>
+            <li>Statistical analysis and visualization to inform coaching strategies</li>
+          </ul>
+        </div>
+      </div>
+      <div class="exp-item reveal d1">
+        <div class="exp-side">
+          <div class="exp-period">NOV 2025 – NOW</div>
+          <div class="exp-loc">BUFFALO, NY</div>
+        </div>
+        <div class="exp-main">
+          <div class="exp-company">UB BIOMEDICAL LAB (DR. ARAS)</div>
+          <div class="exp-role">UNDERGRADUATE RESEARCH ASSISTANT</div>
+          <ul class="exp-bullets">
+            <li>Supporting biomedical research through data organization and workflow coordination</li>
+            <li>Collaborating with graduate researchers on data analysis and experimental documentation</li>
+          </ul>
+        </div>
+      </div>
+      <div class="exp-item reveal d2">
+        <div class="exp-side">
+          <div class="exp-period">JUL 2023 – JUL 2024</div>
+          <div class="exp-loc">KARACHI, PK</div>
+        </div>
+        <div class="exp-main">
+          <div class="exp-company">ACADEMATE — EDTECH STARTUP</div>
+          <div class="exp-role">CEO & CO-FOUNDER</div>
+          <ul class="exp-bullets">
+            <li>Founded student-run EdTech startup for affordable A-Level and college prep courses</li>
+            <li>Scaled to 100+ students across Pakistan — 90%+ satisfaction rate</li>
+            <li>Managed cross-functional team of 5+ educators across curriculum, ops, and finance</li>
+          </ul>
+        </div>
+      </div>
+      <div class="exp-item reveal d3">
+        <div class="exp-side">
+          <div class="exp-period">JUL – AUG 2023</div>
+          <div class="exp-loc">KARACHI, PK</div>
+        </div>
+        <div class="exp-main">
+          <div class="exp-company">INDUS HOSPITAL & HEALTH NETWORK</div>
+          <div class="exp-role">WEB DEVELOPER INTERN</div>
+          <ul class="exp-bullets">
+            <li>Angular UI components for patient portal serving 2.5M+ annual patients</li>
+            <li>MySQL database schemas for electronic medical records system</li>
+            <li>RESTful APIs for appointment scheduling — reduced booking time by 30%</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== TERMINAL ==================== -->
+<section id="terminal" class="section section-wrap" style="padding-top:0">
+  <div class="container">
+    <div class="sec-header reveal">
+      <span class="sec-tag">AI ASSIST</span>
+      <h2 class="sec-title">CORTANA INTERFACE</h2>
+      <div class="sec-line"></div>
+      <span class="sec-counter">05 // COMMS</span>
+    </div>
+    <p class="reveal" style="font-family:'Share Tech Mono',monospace;font-size:12px;color:var(--dim);letter-spacing:2px;margin-bottom:20px;">
+      // Type <span style="color:var(--hud-teal)">help</span> for available commands
+    </p>
+    <div class="terminal reveal d1">
+      <div class="terminal-bar">
+        <div class="t-btn r"></div><div class="t-btn y"></div><div class="t-btn g"></div>
+        <span class="t-bar-label">CORTANA v7.0 // SPARTAN NEURAL LINK ACTIVE</span>
+        <div class="t-bar-right"><div class="t-status-dot"></div>CONNECTED</div>
+      </div>
+      <div class="terminal-body" id="term-body"></div>
+      <div class="t-input-row">
+        <span class="t-input-prompt">spartan@atshal:~$</span>
+        <input type="text" id="term-input" placeholder="enter command..." autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== CONTACT ==================== -->
+<section id="contact" class="section section-wrap" style="padding-top:0">
+  <div class="container">
+    <div class="sec-header reveal">
+      <span class="sec-tag">COMMS</span>
+      <h2 class="sec-title">CONTACT</h2>
+      <div class="sec-line"></div>
+      <span class="sec-counter">06 // DEPLOY</span>
+    </div>
+    <div class="contact-grid">
+      <div class="panel contact-panel reveal d1">
+        <div class="panel-notch"></div>
+        <div class="exp-role" style="margin-bottom:24px;">// INITIATE CONTACT</div>
+        <div class="contact-links">
+          <a href="mailto:atshalah@buffalo.edu" class="c-link">
+            <span class="c-icon">✉</span>atshalah@buffalo.edu
+          </a>
+          <a href="#" class="c-link">
+            <span class="c-icon">in</span>LINKEDIN PROFILE
+          </a>
+          <a href="#" class="c-link">
+            <span class="c-icon">⌥</span>GITHUB PROFILE
+          </a>
+        </div>
+      </div>
+      <div class="panel contact-panel reveal d2">
+        <div class="panel-notch"></div>
+        <div class="exp-role" style="margin-bottom:24px;">// SPARTAN DOSSIER</div>
+        <div class="info-block">
+          <p><strong>Location:</strong> Buffalo, NY, USA</p>
+          <p><strong>Education:</strong> B.S. Computer Science<br>University at Buffalo, SUNY<br>Expected May 2027 — GPA: 3.6 / 4.0</p>
+          <p><strong>Status:</strong> Open to internships & co-ops</p>
+          <div class="clearance-badge">
+            ✓ F-1 VISA // CPT AUTHORIZED // NO SPONSORSHIP REQUIRED
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ==================== FOOTER ==================== -->
+<footer>
+  <div>ATSHAL AHMED KHAN // SPARTAN-ATSHAL // BUFFALO SECTOR</div>
+  <div class="footer-unsc">UNSC // MJOLNIR GEN III // ALL SYSTEMS NOMINAL</div>
+</footer>
+
+<script>
+// ========== CURSOR ==========
+const reticle = document.getElementById('reticle');
+document.addEventListener('mousemove', e => {
+  reticle.style.left = e.clientX + 'px';
+  reticle.style.top = e.clientY + 'px';
+});
+document.querySelectorAll('a,button,input,.proj-panel,.btn,.c-link').forEach(el => {
+  el.addEventListener('mouseenter', () => reticle.classList.add('aim'));
+  el.addEventListener('mouseleave', () => reticle.classList.remove('aim'));
+});
+
+// ========== SCROLL REVEAL ==========
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => { if(e.isIntersecting) e.target.classList.add('vis'); });
+}, { threshold: 0.1 });
+document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
+
+// ========== 3D TILT ==========
+document.querySelectorAll('.proj-panel').forEach(p => {
+  p.addEventListener('mousemove', e => {
+    const r = p.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5;
+    const y = (e.clientY - r.top) / r.height - 0.5;
+    p.style.transform = `perspective(700px) rotateX(${-y * 7}deg) rotateY(${x * 7}deg) translateY(-4px)`;
+  });
+  p.addEventListener('mouseleave', () => p.style.transform = '');
+});
+
+// ========== TERMINAL ==========
+const termBody = document.getElementById('term-body');
+const termInput = document.getElementById('term-input');
+let history = [], histIdx = -1;
+
+const CMDS = {
+  help: () => [
+    {c:'info', t:'CORTANA COMMAND INDEX'},
+    {c:'warn', t:'  whoami          — Spartan dossier'},
+    {c:'warn', t:'  skills          — Loadout / tech stack'},
+    {c:'warn', t:'  missions        — Project operations log'},
+    {c:'warn', t:'  service         — Service record'},
+    {c:'warn', t:'  education       — Training history'},
+    {c:'warn', t:'  contact         — Open comms'},
+    {c:'warn', t:'  status          — Current deployment status'},
+    {c:'warn', t:'  certs           — Certifications'},
+    {c:'warn', t:'  clear           — Wipe terminal'},
+    {c:'warn', t:'  jorge           — ...(try it)'},
+  ],
+  whoami: () => [
+    {c:'info', t:'SPARTAN DESIGNATION: ATSHAL AHMED KHAN'},
+    {c:'ok',   t:'Unit: Spartan-Atshal // Armor: MJOLNIR GEN III'},
+    {c:'',     t:'CS Student @ University at Buffalo, SUNY — GPA: 3.6'},
+    {c:'',     t:'Specialization: Full-Stack Dev, AI/ML Systems, Data Engineering'},
+    {c:'',     t:'3 active research missions. 1 startup launched. 100+ students served.'},
+    {c:'ok',   t:'Authorization: F-1 Visa / CPT — No sponsorship required.'},
+  ],
+  skills: () => [
+    {c:'info', t:'// ARMORY LOADOUT'},
+    {c:'warn', t:'Primary:    Python, JavaScript, TypeScript, Java, SQL'},
+    {c:'warn', t:'AI/ML:      TensorFlow, Scikit-learn, OpenCV, YOLOv8, Pandas'},
+    {c:'warn', t:'Frontend:   React, Angular, Flutter, Redux, Material-UI'},
+    {c:'warn', t:'Backend:    Node.js, Express, REST APIs, GraphQL, MongoDB, MySQL'},
+    {c:'warn', t:'Cloud:      AWS, GCP, Docker, CI/CD, Git, Linux'},
+  ],
+  missions: () => [
+    {c:'info', t:'// MISSION LOG — 6 OPERATIONS'},
+    {c:'ok',   t:'[OPS-001] AI Navigation for Visually Impaired — ACTIVE'},
+    {c:'',     t:'          TensorFlow · Flutter · Gemini AI'},
+    {c:'ok',   t:'[OPS-002] WanderSafe (HackHarvard) — COMPLETE'},
+    {c:'',     t:'          YOLOv8 · 95% accuracy · 99.9% uptime'},
+    {c:'ok',   t:'[OPS-003] Real Estate Analytics Platform — COMPLETE'},
+    {c:'',     t:'          Scikit-learn · R²=0.89 · RMSE=$12,500'},
+    {c:'ok',   t:'[OPS-004] WTTool Wireless Simulator — ACTIVE'},
+    {c:'',     t:'          JavaScript · Google Maps API · NS3'},
+    {c:'ok',   t:'[OPS-005] Flag Football ETL Pipeline — ACTIVE'},
+    {c:'',     t:'          Python · Pandas · Selenium · 1000+pts/week'},
+    {c:'ok',   t:'[OPS-006] Weather Analytics Dashboard — DEPLOYED'},
+    {c:'',     t:'          JavaScript · Chart.js · Heroku CI/CD'},
+  ],
+  service: () => [
+    {c:'info', t:'// SERVICE RECORD'},
+    {c:'warn', t:'[2026-NOW]   UB URCA — Undergrad Research Assistant (Funded)'},
+    {c:'warn', t:'[2025-NOW]   UB Biomedical Lab (Dr. Aras) — Research Assistant'},
+    {c:'warn', t:'[2025]       UB Wireless — Research Volunteer (WTTool)'},
+    {c:'warn', t:'[2023-2024]  ACADEMATE — CEO & Co-Founder (100+ students)'},
+    {c:'warn', t:'[2023]       INDUS HOSPITAL — Web Dev Intern (-30% booking time)'},
+    {c:'warn', t:'[2022-2023]  INDUS HOSPITAL — Technology Volunteer'},
+  ],
+  education: () => [
+    {c:'info', t:'// TRAINING HISTORY'},
+    {c:'ok',   t:'B.S. Computer Science — University at Buffalo, SUNY'},
+    {c:'',     t:'Expected May 2027 // GPA: 3.6 / 4.0'},
+    {c:'',     t:'Relevant: Data Structures, Databases, Software Engineering,'},
+    {c:'',     t:'           Computer Systems, Discrete Structures, Linear Algebra'},
+  ],
+  contact: () => [
+    {c:'info', t:'// OPENING COMMS CHANNEL'},
+    {c:'ok',   t:'Email:    atshalah@buffalo.edu'},
+    {c:'ok',   t:'LinkedIn: linkedin.com/in/atshal'},
+    {c:'ok',   t:'GitHub:   github.com/atshal'},
+    {c:'',     t:'Location: Buffalo, NY, USA'},
+  ],
+  status: () => [
+    {c:'info', t:'// DEPLOYMENT STATUS'},
+    {c:'ok',   t:'[ONLINE]   Open to internships and co-ops'},
+    {c:'ok',   t:'[ACTIVE]   3 research missions running'},
+    {c:'ok',   t:'[READY]    CPT authorized — no sponsorship needed'},
+    {c:'',     t:'Graduation: May 2027'},
+  ],
+  certs: () => [
+    {c:'info', t:'// CERTIFICATIONS'},
+    {c:'warn', t:'[2024] Google AI/ML Fundamentals'},
+    {c:'warn', t:'[2024] 100 Days of Python — Dr. Angela Yu'},
+    {c:'warn', t:'[2023] Full Stack Web Development — Dr. Angela Yu'},
+  ],
+  jorge: () => [
+    {c:'ok',   t:'Noble Six never forgets Noble Five.'},
+    {c:'',     t:'...'},
+    {c:'ok',   t:'JORGE-052 carried that bomb so the rest could live.'},
+    {c:'',     t:'Honor his sacrifice. Ship the code. Make it count.'},
+  ],
+  clear: () => { termBody.innerHTML = ''; return []; },
+};
+
+function printLine(cls, text) {
+  const d = document.createElement('div');
+  d.className = 't-line';
+  const s = document.createElement('span');
+  s.className = `t-out ${cls}`;
+  s.textContent = text;
+  d.appendChild(s);
+  termBody.appendChild(d);
+}
+
+function runCmd(cmd) {
+  const trimmed = cmd.trim().toLowerCase();
+  const pl = document.createElement('div');
+  pl.className = 't-line';
+  pl.innerHTML = `<span class="t-prompt">spartan@atshal:~$</span><span class="t-cmd"> ${cmd}</span>`;
+  termBody.appendChild(pl);
+  if (!trimmed) {}
+  else if (CMDS[trimmed]) {
+    const out = CMDS[trimmed]();
+    if (out) out.forEach(o => printLine(o.c, o.t));
+  } else {
+    printLine('err', `command not found: ${cmd}  |  type 'help' for commands`);
+  }
+  termBody.scrollTop = termBody.scrollHeight;
+}
+
+// Boot
+const boot = [
+  {c:'info', t:'MJOLNIR HUD TERMINAL v7.0 // CORTANA AI ONLINE'},
+  {c:'',     t:'Establishing neural link to SPARTAN-ATSHAL...'},
+  {c:'ok',   t:'[OK] Biometric authentication passed'},
+  {c:'ok',   t:'[OK] Mission database loaded — 6 operations'},
+  {c:'ok',   t:'[OK] 3 active research threads synced'},
+  {c:'ok',   t:'[OK] Shield integrity: 100%'},
+  {c:'',     t:'Type help to begin. And Spartan... good luck out there.'},
+];
+let bi = 0;
+function bootNext() {
+  if (bi >= boot.length) return;
+  printLine(boot[bi].c, boot[bi].t);
+  termBody.scrollTop = termBody.scrollHeight;
+  bi++; setTimeout(bootNext, 220);
+}
+setTimeout(bootNext, 600);
+
+termInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const cmd = termInput.value;
+    if (cmd.trim()) history.unshift(cmd);
+    histIdx = -1;
+    runCmd(cmd);
+    termInput.value = '';
+  }
+  if (e.key === 'ArrowUp') {
+    if (histIdx < history.length - 1) histIdx++;
+    termInput.value = history[histIdx] || '';
+    e.preventDefault();
+  }
+  if (e.key === 'ArrowDown') {
+    if (histIdx > 0) histIdx--;
+    else { histIdx = -1; termInput.value = ''; return; }
+    termInput.value = history[histIdx] || '';
+  }
+});
+document.querySelector('.terminal').addEventListener('click', () => termInput.focus());
+</script>
+</body>
+</html>
